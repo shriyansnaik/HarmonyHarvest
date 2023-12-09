@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+    <link
+      href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css"
+      rel="stylesheet"
+      integrity="sha384-9ndCyUaIbzAi2FUVXJi0CjmCapSmO7SnpJef0486qhLnuZ2cdeRhO02iuK6FUUVM"
+      crossorigin="anonymous"
+    />
+
+    <script
+      src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"
+      integrity="sha384-geWF76RCwLtnZ8qwWowPQNguL3RmwHVBC9FhGdlKrxdiJJigb/j/68SIy3Te4Bkz"
+      crossorigin="anonymous"
+    ></script>
+
+    <script
+      type="text/javascript"
+      src="https://unpkg.com/xlsx@0.15.1/dist/xlsx.full.min.js"
+    ></script>
+
+    <title>Song Downloader</title>
+  </head>
+  <body>
+    <div class="container">
+      <h2 class="text-center mt-4 mb-4">Download Songs</h2>
+      <div id="input_data" class="card">
+        <div class="card-header"><b>Select Excel File</b></div>
+        <div class="card-body">
+          <input type="file" id="excel_file" accept=".xlsx, .xls" />
+        </div>
+      </div>
+      <div id="alert_data" class="mt-5"></div>
+      <div id="table_data" class="mt-5"></div>
+      <div id="heading" class="mt-5"></div>
+      <div id="content" class="mt-5"></div>
+    </div>
+    <div id="form_button" class="d-flex justify-content-center"></div>
+  </body>
+
+  <script>
+    const excel_file = document.getElementById("excel_file");
+    var sheet_data = "";
+    var headers = "";
+    var selected_field = "";
+    var active_button_id = "";
+
+    var SINGER_NAME_SELECTED = false;
+    var SONG_NAME_SELECTED = false;
+
+    var TARGET_FIELDS = {
+      singer_name: "",
+      song_name: "",
+      links: [],
+    };
+
+    var DOWNLOAD_DATA = [];
+
+    function clearAlert() {
+      document.getElementById("alert_data").innerHTML = "";
+    }
+
+    function downloadAlert() {
+      document.getElementById(
+        "alert_data"
+      ).innerHTML = `<div class="alert alert-primary">Downloading your songs, please wait</div>`;
+      document.getElementById("input_data").innerHTML = "";
+      document.getElementById("table_data").innerHTML = "";
+      document.getElementById("heading").innerHTML = "";
+      document.getElementById("content").innerHTML = "";
+      document.getElementById("form_button").innerHTML = "";
+    }
+
+    function showResult(result) {
+      document.getElementById("alert_data").innerHTML = ``;
+      var failed = ""
+      // var failed_songs = JSON.parse(result.failed_songs)
+      for (key in result.failed_songs){
+        failed += "<p1><b>Song:</b> " + result.failed_songs[key].song + "<br>" + "<b>Reason:</b> " + result.failed_songs[key].reason + "</p1>"
+        failed += "<br><br>"
+      }
+      document.getElementById("content").innerHTML = `
+          <div class="card text-bg-success mb-3" style="max-width: 18rem">
+            <div class="card-header">Download Complete</div>
+            <div class="card-body">
+              <h5 class="card-title">Summary of your downloads</h5>
+              <p class="card-text">Total Songs - ${result["total_songs"]}</p>
+              <p class="card-text">Successful - ${result.downloaded}</p>
+              <p class="card-text">Failed - ${result.failed}</p>
+              <p>
+                <a
+                  class="btn btn-primary"
+                  data-bs-toggle="collapse"
+                  href="#collapseExample"
+                  role="button"
+                  aria-expanded="false"
+                  aria-controls="collapseExample"
+                  >Click to see failed songs</a
+                >
+              </p>
+              <div class="collapse" id="collapseExample">
+                <div class="card card-body" style="color:black;">
+                  ${failed}
+                </div>
+              </div>
+            </div>
+         </div>
+      `;
+    }
+
+    function displayReponse() {
+      document.getElementById("download_status").innerHTML =
+        "downloading songs";
+    }
+
+    function renderChoiceButtons(headers) {
+      var header_buttons = "";
+      var row_number = 0;
+      for (header in headers) {
+        header_buttons += `<button type="button" id="${headers[header]}" class="btn btn-outline-primary" style="margin:20px;" value="${row_number}" onClick="toggleButton(\'${headers[header]}\',\'${row_number}\')">${headers[header]}</button>`;
+        row_number++;
+      }
+      document.getElementById("content").innerHTML = header_buttons;
+    }
+
+    function sendData() {
+      // var value = document.getElementById("input").value;
+      // console.log("sendData");
+      downloadAlert();
+      fetch("/download-my-songs", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ data: DOWNLOAD_DATA }),
+      })
+        .then((response) => response.text())
+        .then((result) => {
+          console.log(result);
+          result = JSON.parse(result);
+          showResult(result);
+        })
+        .catch((error) => {
+          console.error("Error:", error);
+        });
+    }
+
+    function downloadSongs() {
+      TARGET_FIELDS["links"] = selected_field;
+
+      for (var row = 1; row < sheet_data.length; row++) {
+        song_data = {};
+        song_data["singer"] = sheet_data[row][TARGET_FIELDS["singer_name"]];
+        song_data["song"] = sheet_data[row][TARGET_FIELDS["song_name"]];
+        song_data["link"] = sheet_data[row][TARGET_FIELDS["links"]];
+        DOWNLOAD_DATA.push(song_data);
+      }
+      // console.log("downloadSongs");
+      sendData();
+    }
+
+    function nextField() {
+      if (SINGER_NAME_SELECTED === false) {
+        TARGET_FIELDS["singer_name"] = selected_field;
+        SINGER_NAME_SELECTED = true;
+        selected_field = "";
+        toggleButton(active_button_id, "");
+
+        document.getElementById("heading").innerHTML =
+          "<h1>Select header containing Song Name<h1>";
+      } else if (SONG_NAME_SELECTED === false) {
+        TARGET_FIELDS["song_name"] = selected_field;
+        SONG_NAME_SELECTED = true;
+        selected_field = "";
+        toggleButton(active_button_id, "");
+
+        document.getElementById("heading").innerHTML =
+          "<h1>Select header containing YouTube Links<h1>";
+      }
+    }
+
+    function toggleButton(id, row_number) {
+      var btn = document.getElementById(id);
+      var class_name = btn.className;
+
+      if (active_button_id !== "") {
+        var temp = active_button_id;
+        active_button_id = "";
+        toggleButton(temp, "");
+      }
+
+      if (class_name == "btn btn-success") {
+        //if active
+        btn.className = "btn btn-outline-primary"; //deactivate
+        active_button_id = "";
+        selected_field = "";
+      } else {
+        btn.className = "btn btn-success";
+        active_button_id = id;
+        selected_field = row_number;
+      }
+      if (selected_field === "") {
+        document.getElementById("form_button").innerHTML = "";
+      } else {
+        if (SONG_NAME_SELECTED) {
+          document.getElementById("form_button").innerHTML =
+            "<button onclick=\"downloadSongs()\" type='button' class='btn btn-danger' style='margin:20px'>Download</button>";
+        } else {
+          document.getElementById("form_button").innerHTML =
+            "<button onclick=\"nextField()\" type='button' class='btn btn-danger' style='margin:20px'>Next</button>";
+        }
+      }
+    }
+
+    excel_file.addEventListener("change", (event) => {
+      var reader = new FileReader();
+
+      reader.readAsArrayBuffer(event.target.files[0]);
+
+      reader.onload = function (event) {
+        var data = new Uint8Array(reader.result);
+
+        var work_book = XLSX.read(data, { type: "array" });
+
+        var sheet_name = work_book.SheetNames;
+
+        sheet_data = XLSX.utils.sheet_to_json(work_book.Sheets[sheet_name[0]], {
+          header: 1,
+        });
+
+        document.getElementById("alert_data").innerHTML =
+          '<div class="alert alert-success">File uploaded successfully</div>';
+        window.setTimeout(clearAlert, 2000);
+        document.getElementById("heading").innerHTML =
+          "<h1>Select header containing Singer's Name<h1>";
+
+        headers = sheet_data[0];
+        renderChoiceButtons(headers);
+
+        if (sheet_data.length > 0) {
+          var table_output =
+            '<table class="table table-striped table-bordered">';
+
+          for (var row = 0; row < 3; row++) {
+            table_output += "<tr>";
+
+            for (var cell = 0; cell < sheet_data[row].length; cell++) {
+              if (row == 0) {
+                table_output += "<th>" + sheet_data[row][cell] + "</th>";
+              } else {
+                table_output += "<td>" + sheet_data[row][cell] + "</td>";
+              }
+            }
+
+            table_output += "</tr>";
+          }
+
+          table_output += "</table>";
+
+          document.getElementById("table_data").innerHTML = table_output;
+        }
+
+        excel_file.value = "";
+      };
+    });
+  </script>
+</html>
